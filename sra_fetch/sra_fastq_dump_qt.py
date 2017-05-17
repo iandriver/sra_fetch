@@ -139,13 +139,18 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
                 sys.stderr.write("Converting to %s/%s.fastq.gz\n" % (
                     directory_path, sra_run))
                 pout, perr = process.communicate()
-                if "command not found" in perr:
+                py3 = sys.version_info[0] > 2
+                if py3:
+                    check_err = b'command not found'
+                else:
+                    check_err = 'command not found'
+                if check_err in perr:
                     sys.exit("fastq-dump command not found")
                 else:
                     print(pout)
                     if not keep_sra:
                         # Delete sra file
-                        os.unlink(filepath)
+                        os.remove(filepath)
 
 def sra_series_fetch(gs_text, series, s3_text, output_path, email, response):
     gs_object = GEOparse.get_GEO(geo=gs_text)
