@@ -8,6 +8,9 @@ import re
 import pandas as pd
 import utils
 import platform
+from collections import OrderedDict
+import boto3
+import botocore
 
 
 
@@ -37,7 +40,17 @@ def read_qt5_input(qt5_data):
         sys.exit('Please enter a valid email.')
     return gs_text, series, s3_text, output_path, email
 
-def download_SRA(gsm, email, metadata_key='auto', directory='./', filetype='sra', aspera=False, keep_sra=False):
+def make_sra_sub_dir(gsm, directory):
+    # make the directory
+    if platform.system() == "Windows":
+        name_regex = r'[\s\*\?\(\),\.\:\%\|\"\<\>]'
+    else:
+        name_regex = r'[\s\*\?\(\),\.;]'
+    directory_path = os.path.abspath(os.path.join(directory, "%s_%s_%s" % ('Supp',gsm.get_accession(),re.sub(name_regex, '_', gsm.metadata['title'][0]) # the directory name cannot contain many of the signs
+    )))
+    return directory_path
+
+def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filetype='sra', aspera=False, keep_sra=False):
     """Download RAW data as SRA file to the sample directory created ad hoc
     or the directory specified by the parameter. The sample has to come from
     sequencing eg. mRNA-seq, CLIP etc.
@@ -63,15 +76,7 @@ def download_SRA(gsm, email, metadata_key='auto', directory='./', filetype='sra'
 
     # Setup the query
     ftpaddres = "ftp://ftp-trace.ncbi.nlm.nih.gov/sra/sra-instant/reads/ByExp/sra/SRX/{range_subdir}/{record_dir}/{file_dir}/{file_dir}.sra"
-    queries = []
-    try:
-        for sra in gsm.relations['SRA']:
-            query = sra.split("=")[-1]
-            assert 'SRX' in query, "Sample looks like it is not SRA: %s" % query
-            print("Query: %s" % query)
-            queries.append(query)
-    except KeyError:
-        raise NoSRARelationException('No relation called SRA for %s' % gsm.get_accession())
+
 
     # check if the e-mail is more or less not a total crap
     Entrez.email = email
@@ -110,13 +115,7 @@ def download_SRA(gsm, email, metadata_key='auto', directory='./', filetype='sra'
             sys.stderr.write('KeyError: ' + str(e) + '\n')
             sys.stderr.write(str(results) + '\n')
 
-        # make the directory
-        if platform.system() == "Windows":
-            name_regex = r'[\s\*\?\(\),\.\:\%\|\"\<\>]'
-        else:
-            name_regex = r'[\s\*\?\(\),\.;]'
-        directory_path = os.path.abspath(os.path.join(directory, "%s_%s_%s" % ('Supp',gsm.get_accession(),re.sub(name_regex, '_', gsm.metadata['title'][0]) # the directory name cannot contain many of the signs
-        )))
+        directory_path = make_sra_sub_dir(gsm, directory)
         utils.mkdir_p(os.path.abspath(directory_path))
 
         for path in df['download_path']:
@@ -137,21 +136,114 @@ def download_SRA(gsm, email, metadata_key='auto', directory='./', filetype='sra'
                 cmd = cmd % (ftype, directory_path, filepath)
 
                 process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                sys.stderr.write("Converting to %s/%s_*.%s.gz\n" % (
-                    directory_path, sra_run, filetype))
+                sys.stderr.write("Converting to %s/%s.fastq.gz\n" % (
+                    directory_path, sra_run))
                 pout, perr = process.communicate()
                 if "command not found" in perr:
-                    raise NoSRAToolkitException("fastq-dump command not found")
+                    sys.exit("fastq-dump command not found")
                 else:
                     print(pout)
                     if not keep_sra:
                         # Delete sra file
                         os.unlink(filepath)
 
-def sra_series_fetch(gs_text, series, s3_text, output_path, email):
+def sra_series_fetch(gs_text, series, s3_text, output_path, email, response):
     gs_object = GEOparse.get_GEO(geo=gs_text)
     gsms_to_use = gs_object.gsms.values()
+    gsm_names = [gsm.name for gsm in gsms_to_use]
+    sra_dict_by_gsm = dict(zip(gsm_names,[gsm.relations['SRA'][0].split("=")[-1] for gsm in gsms_to_use]))
+
     filetype='sra'
+    sra_already_done = []
+    if response == 'Y':
+        for root, dirnames, filenames in os.walk(output_path):
+            fastq_exits = False
+            metadata_exits = False
+            for f in filenames:
+                if 'fastq.gz' in f:
+                    fastq_exits = True
+                if '_metadata' in f:
+                    metadata_exits = True
+                    metadata_path = os.path.join(root,f)
+            if fastq_exits:
+                dir_done = os.path.basename(root).split('_')[1]
+                sra_already_done.append(sra_dict_by_gsm[dir_done])
+                print('Already downloaded:', sra_already_done)
+            elif metadata_exits and s3_text != '':
+                bucket_name = s3_text.split('/')[2]
+                folder_path = '/'.join(s3_text.split('/')[3:])
+                s3 = boto3.resource('s3')
+                metadata_df = pd.read_csv(metadata_path, sep='\t', header=0)
+                srr_num = metadata_df['Run'][0]
+                if metadata_df['LibraryLayout'][0] == 'PAIRED':
+                    fastq_1 = srr_num+'_1.fastq.gz'
+                    fastq_2 = srr_num+'_2.fastq.gz'
+                    fastqs_to_check = [fastq_1,fastq_2]
+                else:
+                    fastqs_to_check = [srr_num+'_1.fastq.gz']
+                for f in fastqs_to_check:
+                    try:
+                        s3.Object(bucket_name, folder_path+'/'+f).load()
+                    except botocore.exceptions.ClientError as e:
+                        if e.response['Error']['Code'] == "404":
+                            pass
+                    else:
+                        dir_done = os.path.basename(root).split('_')[1]
+                        sra_already_done.append(sra_dict_by_gsm[dir_done])
+                        print('Already downloaded:', sra_already_done)
+
+    data_manifest_dict = OrderedDict()
     for gsm in gsms_to_use:
-        sys.stderr.write("Downloading %s files for %s series\n" % (filetype, gsm.name))
-        download_SRA(gsm, email=email, filetype=filetype, directory=output_path)
+
+        queries = []
+        try:
+            for sra in gsm.relations['SRA']:
+                query = sra.split("=")[-1]
+                assert 'SRX' in query, "Sample looks like it is not SRA: %s" % query
+                print("Query: %s" % query)
+                if query not in sra_already_done:
+                    sys.stderr.write("Downloading %s files for %s series\n" % (filetype, gsm.name))
+                    queries.append(query)
+        except KeyError:
+            raise NoSRARelationException('No relation called SRA for %s' % gsm.get_accession())
+        download_SRA(gsm, queries, email=email, filetype=filetype, directory=output_path)
+        if s3_text != '':
+            bucket_name = s3_text.split('/')[2]
+            folder_path = '/'.join(s3_text.split('/')[3:])
+            directory_path = make_sra_sub_dir(gsm, output_path)
+            s3 = boto3.resource('s3')
+            fastq_list = []
+            for root, dirnames, filenames in os.walk(directory_path):
+                for f in filenames:
+                    if 'fastq.gz' in f:
+                        fastq_list.append(f)
+                        file_path = os.path.join(root,f)
+                        try:
+                            s3.Object(bucket_name, folder_path+'/'+f).load()
+                        except botocore.exceptions.ClientError as e:
+                            if e.response['Error']['Code'] == "404":
+                                print('Uploading %s to %s\n'%(file_path, bucket_name+'/'+folder_path))
+                                s3.Bucket(bucket_name).upload_file(file_path, folder_path+'/'+f)
+                        try:
+                            s3.Object(bucket_name, folder_path+'/'+f).load()
+                        except botocore.exceptions.ClientError as e:
+                            if e.response['Error']['Code'] == "404":
+                                print('upload error: '+folder_path+'/'+f)
+                        else:
+                            os.remove(root+'/'+f)
+            fastq_list.sort()
+            data_manifest_dict[sra_dict_by_gsm[gsm.name]] = fastq_list
+    data_manifest_df = pd.DataFrame.from_dict(data_manifest_df, orient='index')
+    if len(data_manifest_df.columns) == 2:
+        data_manifest_df.rename(columns={0:'read1', 1:'read2'}, inplace=True)
+    else:
+        data_manifest_df.rename(columns={0:'read1'}, inplace=True)
+    data_manifest_path = directory_path+'/'+gs_text+'_data_manifest.txt'
+    data_manifest_name = gs_text+'_data_manifest.txt'
+    data_manifest_df.to_csv(file=data_manifest_path, sep='\t')
+    if s3_text != '':
+        bucket_name = s3_text.split('/')[2]
+        folder_path = '/'.join(s3_text.split('/')[3:])
+        directory_path = make_sra_sub_dir(gsm, directory)
+        s3 = boto3.resource('s3')
+        s3.Bucket(bucket_name).upload_file(data_manifest_path, folder_path+'/'+data_manifest_name)
