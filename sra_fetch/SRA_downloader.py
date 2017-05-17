@@ -17,6 +17,7 @@ def main():
 
     try:
         os.mkdir(output_path)
+        response = 'N'
     except OSError:
         if py3:
           response = input("Directory already exists. Do you still want to continue (Y/N): ")
@@ -25,6 +26,6 @@ def main():
         if response != 'Y':
             sys.exit("Canceled, please rerun with different Directory or path.")
     if gs_text != '':
-        sra_series_fetch(gs_text, series, s3_text, output_path, email)
+        sra_series_fetch(gs_text, series, s3_text, output_path, email, response)
 if __name__ == '__main__':
     main()
