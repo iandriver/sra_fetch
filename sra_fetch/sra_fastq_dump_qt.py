@@ -119,38 +119,39 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
         utils.mkdir_p(os.path.abspath(directory_path))
 
         for path in df['download_path']:
-            sra_run = path.split("/")[-1]
-            print("Analysing %s" % sra_run)
-            url = ftpaddres.format(range_subdir=query[:6],
-                                       record_dir=query,
-                                       file_dir=sra_run)
-            filepath = os.path.abspath(os.path.join(directory_path, "%s.sra" % sra_run))
-            df.to_csv(os.path.abspath(os.path.join(directory_path, "%s_metadata.txt" % sra_run)), sep='\t')
-            utils.download_from_url(url, filepath, aspera=aspera)
+            if df['LibraryStrategy'][0] == 'RNA-Seq':
+                sra_run = path.split("/")[-1]
+                print("Analysing %s" % sra_run)
+                url = ftpaddres.format(range_subdir=query[:6],
+                                           record_dir=query,
+                                           file_dir=sra_run)
+                filepath = os.path.abspath(os.path.join(directory_path, "%s.sra" % sra_run))
+                df.to_csv(os.path.abspath(os.path.join(directory_path, "%s_metadata.txt" % sra_run)), sep='\t')
+                utils.download_from_url(url, filepath, aspera=aspera)
 
-            if filetype in ["fasta", "fastq","sra"]:
-                ftype = ""
-                if filetype == "fasta":
-                    ftype = " --fasta "
-                cmd = "fastq-dump --split-files --gzip %s --outdir %s %s"
-                cmd = cmd % (ftype, directory_path, filepath)
+                if filetype in ["fasta", "fastq","sra"]:
+                    ftype = ""
+                    if filetype == "fasta":
+                        ftype = " --fasta "
+                    cmd = "fastq-dump --split-files --gzip %s --outdir %s %s"
+                    cmd = cmd % (ftype, directory_path, filepath)
 
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                sys.stderr.write("Converting to %s/%s.fastq.gz\n" % (
-                    directory_path, sra_run))
-                pout, perr = process.communicate()
-                py3 = sys.version_info[0] > 2
-                if py3:
-                    check_err = b'command not found'
-                else:
-                    check_err = 'command not found'
-                if check_err in perr:
-                    sys.exit("fastq-dump command not found")
-                else:
-                    print(pout)
-                    if not keep_sra:
-                        # Delete sra file
-                        os.remove(filepath)
+                    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                    sys.stderr.write("Converting to %s/%s.fastq.gz\n" % (
+                        directory_path, sra_run))
+                    pout, perr = process.communicate()
+                    py3 = sys.version_info[0] > 2
+                    if py3:
+                        check_err = b'command not found'
+                    else:
+                        check_err = 'command not found'
+                    if check_err in perr:
+                        sys.exit("fastq-dump command not found")
+                    else:
+                        print(pout)
+                        if not keep_sra:
+                            # Delete sra file
+                            os.remove(filepath)
 
 def sra_series_fetch(gs_text, series, s3_text, output_path, email, response):
     gs_object = GEOparse.get_GEO(geo=gs_text)
@@ -172,8 +173,9 @@ def sra_series_fetch(gs_text, series, s3_text, output_path, email, response):
                     metadata_path = os.path.join(root,f)
             if fastq_exits:
                 dir_done = os.path.basename(root).split('_')[1]
-                sra_already_done.append(sra_dict_by_gsm[dir_done])
-                print('Already downloaded:', sra_already_done)
+                if sra_dict_by_gsm[dir_done] not in sra_already_done:
+                    sra_already_done.append(sra_dict_by_gsm[dir_done])
+                    print('Already downloaded:', sra_already_done)
             elif metadata_exits and s3_text != '':
                 bucket_name = s3_text.split('/')[2]
                 folder_path = '/'.join(s3_text.split('/')[3:])
