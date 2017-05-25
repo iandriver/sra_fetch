@@ -11,6 +11,7 @@ import platform
 from collections import OrderedDict
 import boto3
 import botocore
+from Bio import Entrez
 
 
 
@@ -38,7 +39,11 @@ def read_qt5_input(qt5_data):
     email = qt5_data.email.text()
     if email == '':
         sys.exit('Please enter a valid email.')
-    return gs_text, series, s3_text, output_path, email
+    local_files_only = qt5_data.local_manifest
+    s3_files_only = qt5_data.s3_manifest
+    if local_files_only and s3_files_only:
+        sys.exit('Please build your manifest from local or s3 not both.')
+    return gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
 
 def make_sra_sub_dir(gsm, directory):
     # make the directory
@@ -49,6 +54,36 @@ def make_sra_sub_dir(gsm, directory):
     directory_path = os.path.abspath(os.path.join(directory, "%s_%s_%s" % ('Supp',gsm.get_accession(),re.sub(name_regex, '_', gsm.metadata['title'][0]) # the directory name cannot contain many of the signs
     )))
     return directory_path
+
+def gsm_query_to_df(query, email):
+    # retrieve IDs for given SRX
+    # check if the e-mail is more or less not a total crap
+    Entrez.email = email
+    if not (Entrez.email is not None and '@' in email and email != '' and '.' in email):
+        raise Exception('You have to provide valid e-mail')
+    searchdata = Entrez.esearch(db='sra', term=query, usehistory='y', retmode='json')
+    answer = json.loads(searchdata.read())
+    ids = answer["esearchresult"]["idlist"]
+    assert len(ids) == 1, "There should be one and only one ID per SRX"
+
+    # using ID fetch the info
+    number_of_trials = 10
+    wait_time = 30
+    for trial in range(number_of_trials):
+        try:
+            results = Entrez.efetch(db="sra", id=ids[0], rettype="runinfo", retmode="text").read()
+            break
+        except HTTPError as httperr:
+            if "502" in str(httperr):
+                sys.stderr.write("Error: %s, trial %i out of %i, waiting for %i seconds." % (str(httperr),
+                                                                                             trial,
+                                                                                             number_of_trials,
+                                                                                             wait_time))
+                time.sleep(wait_time)
+            else:
+                raise httperr
+    df = pd.DataFrame([i.split(',') for i in results.split('\n') if i != ''][1:], columns = [i.split(',') for i in results.split('\n') if i != ''][0])
+    return(df)
 
 def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filetype='sra', aspera=False, keep_sra=False):
     """Download RAW data as SRA file to the sample directory created ad hoc
@@ -68,7 +103,7 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
     :param keep_sra: bool - keep SRA files after download, defaults to False
 
     """
-    from Bio import Entrez
+
     # Check download filetype
     filetype = filetype.lower()
     if filetype not in ["sra", "fastq", "fasta"]:
@@ -83,31 +118,9 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
     if not (Entrez.email is not None and '@' in email and email != '' and '.' in email):
         raise Exception('You have to provide valid e-mail')
 
+
     for query in queries:
-        # retrieve IDs for given SRX
-        searchdata = Entrez.esearch(db='sra', term=query, usehistory='y', retmode='json')
-        answer = json.loads(searchdata.read())
-        ids = answer["esearchresult"]["idlist"]
-        assert len(ids) == 1, "There should be one and only one ID per SRX"
-
-        # using ID fetch the info
-        number_of_trials = 10
-        wait_time = 30
-        for trial in range(number_of_trials):
-            try:
-                results = Entrez.efetch(db="sra", id=ids[0], rettype="runinfo", retmode="text").read()
-                break
-            except HTTPError as httperr:
-                if "502" in str(httperr):
-                    sys.stderr.write("Error: %s, trial %i out of %i, waiting for %i seconds." % (str(httperr),
-                                                                                                 trial,
-                                                                                                 number_of_trials,
-                                                                                                 wait_time))
-                    time.sleep(wait_time)
-                else:
-                    raise httperr
-        df = pd.DataFrame([i.split(',') for i in results.split('\n') if i != ''][1:], columns = [i.split(',') for i in results.split('\n') if i != ''][0])
-
+        df = gsm_query_to_df(query, email)
         # check it first
         try:
             df['download_path']
@@ -153,7 +166,90 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
                             # Delete sra file
                             os.remove(filepath)
 
-def sra_series_fetch(gs_text, series, s3_text, output_path, email, response):
+def make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
+    # check if the e-mail is more or less not a total crap
+    Entrez.email = email
+    if not (Entrez.email is not None and '@' in email and email != '' and '.' in email):
+        raise Exception('You have to provide valid e-mail')
+    gs_object = GEOparse.get_GEO(geo=gs_text)
+    gsms_to_use = gs_object.gsms.values()
+    gsm_names = [gsm.name for gsm in gsms_to_use]
+    sra_dict_by_gsm = dict(zip(gsm_names,[gsm.relations['SRA'][0].split("=")[-1] for gsm in gsms_to_use]))
+
+    filetype='sra'
+    sra_already_done = []
+    data_manifest_dict = OrderedDict()
+    if local_files_only:
+        for root, dirnames, filenames in os.walk(output_path):
+            metadata_exits = False
+            for f in filenames:
+                if '_metadata' in f:
+                    metadata_exits = True
+                    metadata_path = os.path.join(root,f)
+            if metadata_exits:
+                metadata_df = pd.read_csv(metadata_path, sep='\t', header=0)
+                srr_num = metadata_df['Run'][0]
+                if metadata_df['LibraryLayout'][0] == 'PAIRED':
+                    fastq_1 = srr_num+'_1.fastq.gz'
+                    fastq_2 = srr_num+'_2.fastq.gz'
+                    fastqs_to_check = [fastq_1,fastq_2]
+                else:
+                    fastqs_to_check = [srr_num+'_1.fastq.gz']
+                data_manifest_dict[sra_dict_by_gsm[metadata_df['SampleName'][0]]] = fastqs_to_check
+
+    elif s3_files_only:
+        data_manifest_dict = OrderedDict()
+        bucket_name = s3_text.split('/')[2]
+        folder_path = '/'.join(s3_text.split('/')[3:])
+        s3 = boto3.resource('s3')
+        queries = []
+        for gsm in gsms_to_use:
+            try:
+                for sra in gsm.relations['SRA']:
+                    query = sra.split("=")[-1]
+                    assert 'SRX' in query, "Sample looks like it is not SRA: %s" % query
+                    print("Query: %s" % query)
+                    sys.stderr.write("Downloading %s files for %s series\n" % (filetype, gsm.name))
+                    queries.append(query)
+            except KeyError:
+                raise NoSRARelationException('No relation called SRA for %s' % gsm.get_accession())
+        for query in queries:
+            metadata_df = gsm_query_to_df(query, email)
+            if metadata_df['LibraryStrategy'][0] == 'RNA-Seq':
+                srr_num = metadata_df['Run'][0]
+                if metadata_df['LibraryLayout'][0] == 'PAIRED':
+                    fastq_1 = srr_num+'_1.fastq.gz'
+                    fastq_2 = srr_num+'_2.fastq.gz'
+                    fastqs_to_check = [fastq_1,fastq_2]
+                else:
+                    fastqs_to_check = [srr_num+'_1.fastq.gz']
+                for f in fastqs_to_check:
+                    try:
+                        s3.Object(bucket_name, folder_path+'/'+f).load()
+                        file_exists = True
+                        print(f, 'found in s3')
+                    except botocore.exceptions.ClientError as e:
+                        if e.response['Error']['Code'] == "404":
+                            file_exists = False
+                            pass
+                if file_exists:
+                    data_manifest_dict[sra_dict_by_gsm[metadata_df['SampleName'][0]]] = fastqs_to_check
+    data_manifest_df = pd.DataFrame.from_dict(data_manifest_dict, orient='index')
+    if len(data_manifest_df.columns) == 2:
+        data_manifest_df.rename(columns={0:'read1', 1:'read2'}, inplace=True)
+    else:
+        data_manifest_df.rename(columns={0:'read1'}, inplace=True)
+    data_manifest_name = gs_text+'_data_manifest.txt'
+    data_manifest_path = output_path+'/'+data_manifest_name
+    data_manifest_df.to_csv(data_manifest_path, sep='\t')
+
+    if s3_text != '':
+        bucket_name = s3_text.split('/')[2]
+        folder_path = '/'.join(s3_text.split('/')[3:])
+        s3 = boto3.resource('s3')
+        s3.Bucket(bucket_name).upload_file(data_manifest_path, folder_path+'/'+data_manifest_name)
+
+def sra_series_fetch(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
     gs_object = GEOparse.get_GEO(geo=gs_text)
     gsms_to_use = gs_object.gsms.values()
     gsm_names = [gsm.name for gsm in gsms_to_use]
@@ -199,9 +295,7 @@ def sra_series_fetch(gs_text, series, s3_text, output_path, email, response):
                         sra_already_done.append(sra_dict_by_gsm[dir_done])
                         print('Already downloaded:', sra_already_done)
 
-    data_manifest_dict = OrderedDict()
     for gsm in gsms_to_use:
-
         queries = []
         try:
             for sra in gsm.relations['SRA']:
@@ -239,18 +333,10 @@ def sra_series_fetch(gs_text, series, s3_text, output_path, email, response):
                         else:
                             os.remove(root+'/'+f)
             fastq_list.sort()
-            data_manifest_dict[sra_dict_by_gsm[gsm.name]] = fastq_list
-    data_manifest_df = pd.DataFrame.from_dict(data_manifest_df, orient='index')
-    if len(data_manifest_df.columns) == 2:
-        data_manifest_df.rename(columns={0:'read1', 1:'read2'}, inplace=True)
-    else:
-        data_manifest_df.rename(columns={0:'read1'}, inplace=True)
-    data_manifest_path = directory_path+'/'+gs_text+'_data_manifest.txt'
-    data_manifest_name = gs_text+'_data_manifest.txt'
-    data_manifest_df.to_csv(file=data_manifest_path, sep='\t')
-    if s3_text != '':
-        bucket_name = s3_text.split('/')[2]
-        folder_path = '/'.join(s3_text.split('/')[3:])
-        directory_path = make_sra_sub_dir(gsm, directory)
-        s3 = boto3.resource('s3')
-        s3.Bucket(bucket_name).upload_file(data_manifest_path, folder_path+'/'+data_manifest_name)
+    if not local_files_only and not s3_files_only:
+        if s3_text == '':
+            local_files_only=True
+            make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only)
+        else:
+            s3_files_only=True
+            make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only)

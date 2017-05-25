@@ -44,10 +44,23 @@ class Graph_UI(QWidget):
         self.email.setFixedWidth(200)
         self.email.setText('')
 
+        #data manafest options
+        self.local_manifest = False
+        self.s3_manifest = False
+        self.local_cb = QCheckBox('Make manifest from local', self)
+        self.local_cb.setChecked(True)
+        self.local_cb.toggle()
+        self.local_cb.stateChanged.connect(self.btnstate_local)
+        self.s3_cb = QCheckBox('Make manifest from s3', self)
+        self.s3_cb.setChecked(True)
+        self.s3_cb.toggle()
+        self.s3_cb.stateChanged.connect(self.btnstate_s3)
+
         self.qbtn = QPushButton('Run', self)
         self.qbtn.clicked.connect(self.get_sra)
         self.qbtn.clicked.connect(self.get_s3)
         self.qbtn.clicked.connect(self.get_email)
+
         self.qbtn.clicked.connect(QCoreApplication.instance().quit)
         self.qbtn.resize(self.qbtn.sizeHint())
         self.qbtn.move(50, 50)
@@ -63,7 +76,9 @@ class Graph_UI(QWidget):
         grid.addWidget(self.s3, 4,0)
         grid.addWidget(self.email_label, 3,1)
         grid.addWidget(self.email, 4,1)
-        grid.addWidget(self.qbtn, 5,0)
+        grid.addWidget(self.local_cb, 0, 2)
+        grid.addWidget(self.s3_cb, 1, 2)
+        grid.addWidget(self.qbtn, 5,1)
 
         self.setLayout(grid)
 
@@ -96,3 +111,15 @@ class Graph_UI(QWidget):
         self.email.setText(email)
         if email != '':
             print('email for NCBI: ', email)
+    def btnstate_s3(self, state):
+        if state == Qt.Checked:
+            self.s3_manifest = True
+        else:
+            self.s3_manifest = False
+            print('s3')
+
+    def btnstate_local(self, state):
+        if state == Qt.Checked:
+            self.local_manifest = True
+        else:
+            self.local_manifest = False
