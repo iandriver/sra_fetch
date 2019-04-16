@@ -45,6 +45,37 @@ def read_qt5_input(qt5_data):
         sys.exit('Please build your manifest from local or s3 not both.')
     return gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
 
+def read_args_input(args):
+    gs_text = args.sra
+
+    if gs_text[0:2] =='GS' and gs_text[3:].isdigit() and len(gs_text[3:]) in [5,6]:
+        if gs_text[2] == 'E':
+            series = True
+        else:
+            series =False
+    else:
+        print(gs_text)
+        sys.exit('Please enter a valid GEO series or sample ID (GSE or GSM followed by 6 digits)')
+    s3_text = args.s3
+    if s3_text != '':
+        if s3_text[0:5] != "s3://":
+            sys.exit('Please enter a valid s3 bucket begining with s3://')
+    directory_path = args.directoryLabel
+    if directory_path == '':
+        cwd = os.getcwd()
+        output_path = os.path.join(cwd, gs_text)
+    else:
+        output_path = os.path.join(directory_path, gs_text)
+    email = args.email
+    if email == '':
+        sys.exit('Please enter a valid email.')
+    local_files_only = args.local_manifest
+    s3_files_only = args.s3_manifest
+    if local_files_only and s3_files_only:
+        sys.exit('Please build your manifest from local or s3 not both.')
+    return gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
+
+
 def make_sra_sub_dir(gsm, directory):
     # make the directory
     if platform.system() == "Windows":
