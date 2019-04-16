@@ -140,14 +140,13 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
                                            file_dir=sra_run)
                 filepath = os.path.abspath(os.path.join(directory_path, "%s.sra" % sra_run))
                 df.to_csv(os.path.abspath(os.path.join(directory_path, "%s_metadata.txt" % sra_run)), sep='\t')
-                utils.download_from_url(url, filepath, aspera=aspera)
 
                 if filetype in ["fasta", "fastq","sra"]:
                     ftype = ""
                     if filetype == "fasta":
                         ftype = " --fasta "
-                    cmd = "fastq-dump --split-files --gzip %s --outdir %s %s"
-                    cmd = cmd % (ftype, directory_path, filepath)
+                    cmd = "fastq-dump --split-files --gzip --O %s %s"
+                    cmd = cmd % (directory_path, sra_run)
 
                     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
                     sys.stderr.write("Converting to %s/%s.fastq.gz\n" % (
