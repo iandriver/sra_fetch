@@ -39,6 +39,7 @@ def get_parser():
     parser.add_argument("-p, --processes",
                         dest="processes",
                         default=20,
+                        type=int,
                         help="Number of concurrent submissions to make.")
 
     if len(sys.argv)==1:
