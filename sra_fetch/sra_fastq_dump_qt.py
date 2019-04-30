@@ -266,7 +266,7 @@ def make_manifest(gs_text, series, s3_text, output_path, email, response, local_
         s3 = boto3.resource('s3')
         s3.Bucket(bucket_name).upload_file(data_manifest_path, folder_path+'/'+data_manifest_name)
 
-def sra_series_fetch(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
+def sra_series_fetch(process_num, gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
     gs_object = GEOparse.get_GEO(geo=gs_text)
     gsms_to_use = gs_object.gsms.values()
     gsm_names = [gsm.name for gsm in gsms_to_use]
@@ -328,7 +328,7 @@ def sra_series_fetch(gs_text, series, s3_text, output_path, email, response, loc
         download_sra_cmd = download_SRA(gsm, queries, email=email, filetype=filetype, directory=output_path)
         cmd_list.append(download_sra_cmd)
     processes = set()
-    max_processes = min(40, len(cmd_list))
+    max_processes = min(process_num, len(cmd_list))
     for c in cmd_list:
 
         name = c.split(' ')[-1]
