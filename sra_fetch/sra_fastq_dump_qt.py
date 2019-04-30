@@ -73,7 +73,8 @@ def read_args_input(args):
     s3_files_only = args.s3_manifest
     if local_files_only and s3_files_only:
         sys.exit('Please build your manifest from local or s3 not both.')
-    return gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
+    process_num = args.processes
+    return process_num, gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
 
 
 def make_sra_sub_dir(gsm, directory):
@@ -161,8 +162,10 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
 
         directory_path = make_sra_sub_dir(gsm, directory)
         utils.mkdir_p(os.path.abspath(directory_path))
-
+        count = 0
         for path in df['download_path']:
+            count+=1
+            print(count)
             if df['LibraryStrategy'][0] == 'RNA-Seq':
                 sra_run = path.split("/")[-1]
                 print("Analysing %s" % sra_run)
@@ -178,23 +181,7 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
                         ftype = " --fasta "
                     cmd = "fastq-dump --split-files --gzip --O %s %s"
                     cmd = cmd % (directory_path, sra_run)
-
-                    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                    sys.stderr.write("Converting to %s/%s.fastq.gz\n" % (
-                        directory_path, sra_run))
-                    pout, perr = process.communicate()
-                    py3 = sys.version_info[0] > 2
-                    if py3:
-                        check_err = b'command not found'
-                    else:
-                        check_err = 'command not found'
-                    if check_err in perr:
-                        sys.exit("fastq-dump command not found")
-                    else:
-                        print(pout)
-                        if not keep_sra:
-                            # Delete sra file
-                            os.remove(filepath)
+                    return cmd
 
 def make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
     # check if the e-mail is more or less not a total crap
@@ -324,6 +311,7 @@ def sra_series_fetch(gs_text, series, s3_text, output_path, email, response, loc
                         dir_done = os.path.basename(root).split('_')[1]
                         sra_already_done.append(sra_dict_by_gsm[dir_done])
                         print('Already downloaded:', sra_already_done)
+    cmd_list = []
 
     for gsm in gsms_to_use:
         queries = []
@@ -333,36 +321,28 @@ def sra_series_fetch(gs_text, series, s3_text, output_path, email, response, loc
                 assert 'SRX' in query, "Sample looks like it is not SRA: %s" % query
                 print("Query: %s" % query)
                 if query not in sra_already_done:
-                    sys.stderr.write("Downloading %s files for %s series\n" % (filetype, gsm.name))
+
                     queries.append(query)
         except KeyError:
             raise NoSRARelationException('No relation called SRA for %s' % gsm.get_accession())
-        download_SRA(gsm, queries, email=email, filetype=filetype, directory=output_path)
-        if s3_text != '':
-            bucket_name = s3_text.split('/')[2]
-            folder_path = '/'.join(s3_text.split('/')[3:])
-            directory_path = make_sra_sub_dir(gsm, output_path)
-            s3 = boto3.resource('s3')
-            fastq_list = []
-            for root, dirnames, filenames in os.walk(directory_path):
-                for f in filenames:
-                    if 'fastq.gz' in f:
-                        fastq_list.append(f)
-                        file_path = os.path.join(root,f)
-                        try:
-                            s3.Object(bucket_name, folder_path+'/'+f).load()
-                        except botocore.exceptions.ClientError as e:
-                            if e.response['Error']['Code'] == "404":
-                                print('Uploading %s to %s\n'%(file_path, bucket_name+'/'+folder_path))
-                                s3.Bucket(bucket_name).upload_file(file_path, folder_path+'/'+f)
-                        try:
-                            s3.Object(bucket_name, folder_path+'/'+f).load()
-                        except botocore.exceptions.ClientError as e:
-                            if e.response['Error']['Code'] == "404":
-                                print('upload error: '+folder_path+'/'+f)
-                        else:
-                            os.remove(root+'/'+f)
-            fastq_list.sort()
+        download_sra_cmd = download_SRA(gsm, queries, email=email, filetype=filetype, directory=output_path)
+        cmd_list.append(download_sra_cmd)
+    processes = set()
+    max_processes = min(40, len(cmd_list))
+    for c in cmd_list:
+
+        name = c.split(' ')[-1]
+        sys.stderr.write("Downloading %s \n" %(name))
+        processes.add(subprocess.Popen([c, name],stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True))
+        if len(processes) >= max_processes:
+            os.wait()
+            processes.difference_update([
+            p for p in processes if p.poll() is not None])
+
+    for p in processes:
+        if p.poll() is None:
+            p.wait()
+
     if not local_files_only and not s3_files_only:
         if s3_text == '':
             local_files_only=True

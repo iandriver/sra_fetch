@@ -36,6 +36,10 @@ def get_parser():
                         default=False,
                         action='store_true',
                         help="Make manifest of files for GSE.")
+    parser.add_argument("-p, --processes",
+                        dest="processes",
+                        default=20,
+                        help="Number of concurrent submissions to make.")
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
