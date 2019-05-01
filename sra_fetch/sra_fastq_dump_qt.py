@@ -179,8 +179,8 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
                     ftype = ""
                     if filetype == "fasta":
                         ftype = " --fasta "
-                    cmd = "fastq-dump --split-files --gzip --O %s %s"
-                    cmd = cmd % (directory_path, sra_run)
+                    cmd = "parallel-fastq-dump --sra-id %s --threads 100 --outdir %s --split-files --gzip %s %s"
+                    cmd = cmd % (sra_run, directory_path)
                     return cmd
 
 def make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
