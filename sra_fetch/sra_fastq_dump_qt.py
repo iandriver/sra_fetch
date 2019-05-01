@@ -179,7 +179,7 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
                     ftype = ""
                     if filetype == "fasta":
                         ftype = " --fasta "
-                    cmd = "parallel-fastq-dump --sra-id %s --threads 100 --outdir %s --split-files --gzip %s %s"
+                    cmd = "parallel-fastq-dump --sra-id %s --threads 100 --outdir %s --split-files --gzip"
                     cmd = cmd % (sra_run, directory_path)
                     return cmd
 
@@ -331,7 +331,10 @@ def sra_series_fetch(process_num, gs_text, series, s3_text, output_path, email, 
     max_processes = min(process_num, len(cmd_list))
     for c in cmd_list:
 
-        name = c.split(' ')[-1]
+        name = c.split(' ')[2]
+        ouput_path = c.split(' ')[6]
+        if s3_text:
+            c = c +' && aws s3 sync %s %s && rm -rf %s' %(ouput_path,s3_text, output_path)        
         sys.stderr.write("Downloading %s \n" %(name))
         processes.add(subprocess.Popen([c, name],stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True))
         if len(processes) >= max_processes:
