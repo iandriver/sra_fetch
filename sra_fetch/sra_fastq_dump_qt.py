@@ -83,7 +83,7 @@ def make_sra_sub_dir(gsm, directory):
         name_regex = r'[\s\*\?\(\),\.\:\%\|\"\<\>]'
     else:
         name_regex = r'[\s\*\?\(\),\.;]'
-    directory_path = os.path.abspath(os.path.join(directory, "%s_%s_%s" % ('Supp',gsm.get_accession(),re.sub(name_regex, '_', gsm.metadata['title'][0]) # the directory name cannot contain many of the signs
+    directory_path = os.path.abspath(os.path.join(directory, "%s_%s_%s" % (gsm.get_accession(),re.sub(name_regex, '_', gsm.metadata['title'][0]) # the directory name cannot contain many of the signs
     )))
     return directory_path
 
@@ -333,8 +333,9 @@ def sra_series_fetch(process_num, gs_text, series, s3_text, output_path, email, 
 
         name = c.split(' ')[2]
         ouput_path = c.split(' ')[6]
+        folder_name = os.path.basename(output_path.strip('/'))
         if s3_text:
-            c = c +' && aws s3 sync %s %s && rm -rf %s' %(ouput_path,s3_text, output_path)        
+            c = c +' && aws s3 sync %s %s && rm -rf %s' %(ouput_path,s3_text+'/'+folder_name, output_path)
         sys.stderr.write("Downloading %s \n" %(name))
         processes.add(subprocess.Popen([c, name],stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True))
         if len(processes) >= max_processes:
