@@ -74,7 +74,7 @@ def read_args_input(args):
     if local_files_only and s3_files_only:
         sys.exit('Please build your manifest from local or s3 not both.')
     process_num = args.processes
-    process_num = str(args.threads)
+    split_num = str(args.threads)
     return split_num, process_num, gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
 
 
