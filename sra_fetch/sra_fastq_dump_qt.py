@@ -333,15 +333,22 @@ def sra_series_fetch(process_num, gs_text, series, s3_text, output_path, email, 
 
         name = c.split(' ')[2]
         ouput_path = c.split(' ')[6]
-        folder_name = os.path.basename(output_path.strip('/'))
+        folder_name = os.path.basename(c.split(' ')[6])
+
+        s3_path = s3_text+'/'+folder_name
         if s3_text:
-            c = c +' && aws s3 sync %s %s && rm -rf %s' %(ouput_path,s3_text+'/'+folder_name, output_path)
-        sys.stderr.write("Downloading %s \n" %(name))
-        processes.add(subprocess.Popen([c, name],stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True))
+            c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(c.split(' ')[6],s3_path, c.split(' ')[6])
+        else:
+            c_run = c
+        print("Downloading %s \n" %(name))
+        print(c_run)
+        processes.add(subprocess.Popen([c_run, name], shell=True))
         if len(processes) >= max_processes:
             os.wait()
             processes.difference_update([
             p for p in processes if p.poll() is not None])
+
+
 
     for p in processes:
         if p.poll() is None:
