@@ -83,7 +83,7 @@ def make_sra_sub_dir(gsm, directory):
         name_regex = r'[\s\*\?\(\),\.\:\%\|\"\<\>]'
     else:
         name_regex = r'[\s\*\?\(\),\.;]'
-    directory_path = os.path.abspath(os.path.join(directory, "%s_%s_%s" % (gsm.get_accession(),re.sub(name_regex, '_', gsm.metadata['title'][0]) # the directory name cannot contain many of the signs
+    directory_path = os.path.abspath(os.path.join(directory, "%s_%s" % (gsm.get_accession(),re.sub(name_regex, '_', gsm.metadata['title'][0]) # the directory name cannot contain many of the signs
     )))
     return directory_path
 
