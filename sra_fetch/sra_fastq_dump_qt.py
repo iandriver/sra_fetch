@@ -74,7 +74,8 @@ def read_args_input(args):
     if local_files_only and s3_files_only:
         sys.exit('Please build your manifest from local or s3 not both.')
     process_num = args.processes
-    return process_num, gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
+    process_num = str(args.threads)
+    return split_num, process_num, gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only
 
 
 def make_sra_sub_dir(gsm, directory):
@@ -117,7 +118,7 @@ def gsm_query_to_df(query, email):
     df = pd.DataFrame([i.split(',') for i in results.split('\n') if i != ''][1:], columns = [i.split(',') for i in results.split('\n') if i != ''][0])
     return(df)
 
-def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filetype='sra', aspera=False, keep_sra=False):
+def download_SRA(gsm, queries, split_num, email, metadata_key='auto', directory='./', filetype='sra', aspera=False, keep_sra=False):
     """Download RAW data as SRA file to the sample directory created ad hoc
     or the directory specified by the parameter. The sample has to come from
     sequencing eg. mRNA-seq, CLIP etc.
@@ -179,8 +180,8 @@ def download_SRA(gsm, queries, email, metadata_key='auto', directory='./', filet
                     ftype = ""
                     if filetype == "fasta":
                         ftype = " --fasta "
-                    cmd = "parallel-fastq-dump --sra-id %s --threads 100 --outdir %s --split-files --gzip"
-                    cmd = cmd % (sra_run, directory_path)
+                    cmd = "parallel-fastq-dump --sra-id %s --threads %s --outdir %s --split-files --gzip"
+                    cmd = cmd % (sra_run, split_num, directory_path)
                     return cmd
 
 def make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
@@ -266,7 +267,7 @@ def make_manifest(gs_text, series, s3_text, output_path, email, response, local_
         s3 = boto3.resource('s3')
         s3.Bucket(bucket_name).upload_file(data_manifest_path, folder_path+'/'+data_manifest_name)
 
-def sra_series_fetch(process_num, gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
+def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
     gs_object = GEOparse.get_GEO(geo=gs_text)
     gsms_to_use = gs_object.gsms.values()
     gsm_names = [gsm.name for gsm in gsms_to_use]
@@ -325,7 +326,7 @@ def sra_series_fetch(process_num, gs_text, series, s3_text, output_path, email, 
                     queries.append(query)
         except KeyError:
             raise NoSRARelationException('No relation called SRA for %s' % gsm.get_accession())
-        download_sra_cmd = download_SRA(gsm, queries, email=email, filetype=filetype, directory=output_path)
+        download_sra_cmd = download_SRA(gsm, queries, split_num, email=email, filetype=filetype, directory=output_path)
         cmd_list.append(download_sra_cmd)
     processes = set()
     max_processes = min(process_num, len(cmd_list))

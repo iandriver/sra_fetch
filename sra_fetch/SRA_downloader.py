@@ -15,7 +15,7 @@ def main():
     if val == 'qt5':
         gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only = read_qt5_input(data)
     elif val == 'arg':
-        process_num, gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only = read_args_input(data)
+        split_num, process_num, gs_text, series, s3_text, output_path, email, local_files_only, s3_files_only = read_args_input(data)
     print(local_files_only, s3_files_only)
     py3 = sys.version_info[0] > 2 #creates boolean value for test that Python major version > 2
 
@@ -33,6 +33,6 @@ def main():
         if s3_files_only or local_files_only:
             make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only)
         else:
-            sra_series_fetch(process_num, gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only)
+            sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only)
 if __name__ == '__main__':
     main()

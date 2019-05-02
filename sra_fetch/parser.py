@@ -41,6 +41,11 @@ def get_parser():
                         default=20,
                         type=int,
                         help="Number of concurrent submissions to make.")
+    parser.add_argument("-t, --threads",
+                        dest="threads",
+                        default=20,
+                        type=int,
+                        help="Number of parallel downloads per sra file.")
 
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
