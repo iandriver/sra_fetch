@@ -107,7 +107,7 @@ def gsm_query_to_df(query, email):
             results = Entrez.efetch(db="sra", id=ids[0], rettype="runinfo", retmode="text").read()
             break
         except urllib.error.HTTPError as httperr:
-            if "502" in str(httperr):
+            if "502" in str(httperr) or "429" in str(httperr):
                 sys.stderr.write("Error: %s, trial %i out of %i, waiting for %i seconds." % (str(httperr),
                                                                                              trial,
                                                                                              number_of_trials,
