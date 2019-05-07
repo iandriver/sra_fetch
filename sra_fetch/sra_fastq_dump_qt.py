@@ -182,7 +182,7 @@ def download_SRA(gsm, queries, split_num, email, metadata_key='auto', directory=
                         ftype = " --fasta "
                     cmd = "parallel-fastq-dump --sra-id %s --threads %s --outdir %s --split-files --gzip"
                     cmd = cmd % (sra_run, split_num, directory_path)
-                    return (cmd, sra_run, outdir)
+                    return (cmd, sra_run, directory_path)
 
 def make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
     # check if the e-mail is more or less not a total crap
