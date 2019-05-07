@@ -182,7 +182,7 @@ def download_SRA(gsm, queries, split_num, email, metadata_key='auto', directory=
                         ftype = " --fasta "
                     cmd = "parallel-fastq-dump --sra-id %s --threads %s --outdir %s --split-files --gzip"
                     cmd = cmd % (sra_run, split_num, directory_path)
-                    return cmd
+                    return (cmd, sra_run, outdir)
 
 def make_manifest(gs_text, series, s3_text, output_path, email, response, local_files_only, s3_files_only):
     # check if the e-mail is more or less not a total crap
@@ -290,28 +290,7 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
                 if sra_dict_by_gsm[dir_done] not in sra_already_done:
                     sra_already_done.append(sra_dict_by_gsm[dir_done])
                     print('Already downloaded:', sra_already_done)
-            elif metadata_exits and s3_text != '':
-                bucket_name = s3_text.split('/')[2]
-                folder_path = '/'.join(s3_text.split('/')[3:])
-                s3 = boto3.resource('s3')
-                metadata_df = pd.read_csv(metadata_path, sep='\t', header=0)
-                srr_num = metadata_df['Run'][0]
-                if metadata_df['LibraryLayout'][0] == 'PAIRED':
-                    fastq_1 = srr_num+'_1.fastq.gz'
-                    fastq_2 = srr_num+'_2.fastq.gz'
-                    fastqs_to_check = [fastq_1,fastq_2]
-                else:
-                    fastqs_to_check = [srr_num+'_1.fastq.gz']
-                for f in fastqs_to_check:
-                    try:
-                        s3.Object(bucket_name, folder_path+'/'+f).load()
-                    except botocore.exceptions.ClientError as e:
-                        if e.response['Error']['Code'] == "404":
-                            pass
-                    else:
-                        dir_done = os.path.basename(root).split('_')[1]
-                        sra_already_done.append(sra_dict_by_gsm[dir_done])
-                        print('Already downloaded:', sra_already_done)
+
     cmd_list = []
 
     for gsm in gsms_to_use:
@@ -321,6 +300,28 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
                 query = sra.split("=")[-1]
                 assert 'SRX' in query, "Sample looks like it is not SRA: %s" % query
                 print("Query: %s" % query)
+                if s3_text != '':
+                    bucket_name = s3_text.split('/')[2]
+                    folder_path = '/'.join(s3_text.split('/')[3:])
+                    s3 = boto3.resource('s3')
+                    metadata_df = pd.read_csv(metadata_path, sep='\t', header=0)
+                    srr_num = metadata_df['Run'][0]
+                    if metadata_df['LibraryLayout'][0] == 'PAIRED':
+                        fastq_1 = srr_num+'_1.fastq.gz'
+                        fastq_2 = srr_num+'_2.fastq.gz'
+                        fastqs_to_check = [fastq_1,fastq_2]
+                    else:
+                        fastqs_to_check = [srr_num+'_1.fastq.gz']
+                    for f in fastqs_to_check:
+                        try:
+                            s3.Object(bucket_name, folder_path+'/'+f).load()
+                        except botocore.exceptions.ClientError as e:
+                            if e.response['Error']['Code'] == "404":
+                                pass
+                        else:
+                            dir_done = os.path.basename(root).split('_')[1]
+                            sra_already_done.append(sra_dict_by_gsm[dir_done])
+                            print('Already downloaded:', sra_already_done)
                 if query not in sra_already_done:
 
                     queries.append(query)
@@ -332,11 +333,31 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
     max_processes = min(process_num, len(cmd_list))
     for c in cmd_list:
 
-        name = c.split(' ')[2]
-        ouput_path = c.split(' ')[6]
-        folder_name = os.path.basename(c.split(' ')[6])
+        name = c[0].split(' ')[2]
+        ouput_path = c[0].split(' ')[6]
+        folder_name = os.path.basename(c[0].split(' ')[6])
 
         s3_path = s3_text+'/'+folder_name
+        if s3_text != '':
+            bucket_name = s3_text.split('/')[2]
+            folder_path = os.path.basename(c[2].strip('/'))
+            s3 = boto3.resource('s3')
+
+
+            fastq_1 = c[1]+'_1.fastq.gz'
+            fastq_2 = c[1]+'_2.fastq.gz'
+            fastqs_to_check = [fastq_1,fastq_2]
+            file_found = 0
+            for f in fastqs_to_check:
+                try:
+                    s3.Object(bucket_name, folder_path+'/'+f).load()
+                    file_found +=1
+                except botocore.exceptions.ClientError as e:
+                    if e.response['Error']['Code'] == "404":
+
+        if file_found < 2:
+            print(c[2], 'Found in s3')
+            break
         if s3_text:
             c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(c.split(' ')[6],s3_path, c.split(' ')[6])
         else:
