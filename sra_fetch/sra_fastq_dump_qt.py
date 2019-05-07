@@ -354,7 +354,7 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
                     file_found +=1
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == "404":
-
+                        pass
         if file_found < 2:
             print(c[2], 'Found in s3')
             break
