@@ -336,24 +336,26 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
                         pass
         if file_found < 2:
             print(c[2], 'Found in s3')
-            break
-        if s3_text:
-            c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(c[0].split(' ')[6],s3_path, c[0].split(' ')[6])
+            run=False
         else:
-            c_run = c
-        print("Downloading %s \n" %(name))
-        print(c_run)
-        processes.add(subprocess.Popen([c_run, name], shell=True))
-        if len(processes) >= max_processes:
-            os.wait()
-            processes.difference_update([
-            p for p in processes if p.poll() is not None])
+            if s3_text:
+                c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(c[0].split(' ')[6],s3_path, c[0].split(' ')[6])
+            else:
+                c_run = c
+            print("Downloading %s \n" %(name))
+            print(c_run)
+            run=True
+            processes.add(subprocess.Popen([c_run, name], shell=True))
+            if len(processes) >= max_processes:
+                os.wait()
+                processes.difference_update([
+                p for p in processes if p.poll() is not None])
 
 
-
-    for p in processes:
-        if p.poll() is None:
-            p.wait()
+    if run:
+        for p in processes:
+            if p.poll() is None:
+                p.wait()
 
     if not local_files_only and not s3_files_only:
         if s3_text == '':
