@@ -340,9 +340,9 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
             run=False
         else:
             if s3_text:
-                c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(cmd.split(' ')[6],s3_path, cmd.split(' ')[6])
+                c_run = cmd +' && aws s3 sync %s %s && rm -rf %s' %(cmd.split(' ')[6],s3_path, cmd.split(' ')[6])
             else:
-                c_run = c
+                c_run = cmd
             print("Downloading %s \n" %(name))
             print(c_run)
             run=True
