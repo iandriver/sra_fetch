@@ -330,6 +330,7 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
                 try:
                     s3.Object(bucket_name, folder_path+'/'+f).load()
                     file_found +=1
+                    print(os.path.join(bucket_name,folder_path,f), 'found')
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == "404":
                         pass
@@ -337,7 +338,7 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
             print(c[2], 'Found in s3')
             break
         if s3_text:
-            c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(c.split(' ')[6],s3_path, c.split(' ')[6])
+            c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(c[0].split(' ')[6],s3_path, c[0].split(' ')[6])
         else:
             c_run = c
         print("Downloading %s \n" %(name))
