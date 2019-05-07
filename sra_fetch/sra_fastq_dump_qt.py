@@ -310,10 +310,11 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
     processes = set()
     max_processes = min(process_num, len(cmd_list))
     for c in cmd_list:
-
-        name = c[0].split(' ')[2]
-        ouput_path = c[0].split(' ')[6]
-        folder_name = os.path.basename(c[0].split(' ')[6])
+        cmd = c[0]
+        print(cmd)
+        name = cmd.split(' ')[2]
+        ouput_path = cmd.split(' ')[6]
+        folder_name = os.path.basename(cmd.split(' ')[6])
 
         s3_path = s3_text+'/'+folder_name
         if s3_text != '':
@@ -334,12 +335,12 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
                 except botocore.exceptions.ClientError as e:
                     if e.response['Error']['Code'] == "404":
                         pass
-        if file_found < 2:
+        if file_found > 0:
             print(c[2], 'Found in s3')
             run=False
         else:
             if s3_text:
-                c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(c[0].split(' ')[6],s3_path, c[0].split(' ')[6])
+                c_run = c +' && aws s3 sync %s %s && rm -rf %s' %(cmd.split(' ')[6],s3_path, cmd.split(' ')[6])
             else:
                 c_run = c
             print("Downloading %s \n" %(name))
