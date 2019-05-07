@@ -300,31 +300,9 @@ def sra_series_fetch(split_num, process_num, gs_text, series, s3_text, output_pa
                 query = sra.split("=")[-1]
                 assert 'SRX' in query, "Sample looks like it is not SRA: %s" % query
                 print("Query: %s" % query)
-                if s3_text != '':
-                    bucket_name = s3_text.split('/')[2]
-                    folder_path = '/'.join(s3_text.split('/')[3:])
-                    s3 = boto3.resource('s3')
-                    metadata_df = pd.read_csv(metadata_path, sep='\t', header=0)
-                    srr_num = metadata_df['Run'][0]
-                    if metadata_df['LibraryLayout'][0] == 'PAIRED':
-                        fastq_1 = srr_num+'_1.fastq.gz'
-                        fastq_2 = srr_num+'_2.fastq.gz'
-                        fastqs_to_check = [fastq_1,fastq_2]
-                    else:
-                        fastqs_to_check = [srr_num+'_1.fastq.gz']
-                    for f in fastqs_to_check:
-                        try:
-                            s3.Object(bucket_name, folder_path+'/'+f).load()
-                        except botocore.exceptions.ClientError as e:
-                            if e.response['Error']['Code'] == "404":
-                                pass
-                        else:
-                            dir_done = os.path.basename(root).split('_')[1]
-                            sra_already_done.append(sra_dict_by_gsm[dir_done])
-                            print('Already downloaded:', sra_already_done)
-                if query not in sra_already_done:
 
-                    queries.append(query)
+
+                queries.append(query)
         except KeyError:
             raise NoSRARelationException('No relation called SRA for %s' % gsm.get_accession())
         download_sra_cmd = download_SRA(gsm, queries, split_num, email=email, filetype=filetype, directory=output_path)
