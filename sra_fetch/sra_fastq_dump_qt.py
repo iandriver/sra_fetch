@@ -12,7 +12,8 @@ from collections import OrderedDict
 import boto3
 import botocore
 from Bio import Entrez
-
+from urllib.error import HTTPError
+import time
 
 
 def read_qt5_input(qt5_data):
@@ -106,7 +107,7 @@ def gsm_query_to_df(query, email):
         try:
             results = Entrez.efetch(db="sra", id=ids[0], rettype="runinfo", retmode="text").read()
             break
-        except urllib.error.HTTPError as httperr:
+        except HTTPError as httperr:
             if "502" in str(httperr) or "429" in str(httperr):
                 sys.stderr.write("Error: %s, trial %i out of %i, waiting for %i seconds." % (str(httperr),
                                                                                              trial,
